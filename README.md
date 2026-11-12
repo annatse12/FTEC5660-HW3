@@ -212,7 +212,11 @@ names and wording, and scores your 3 points only.
 [Return Results Dictionary]
 
 **Description:**
-My agent uses a Router-based Prompt Chaining design, heavily relying on SQL for deterministic calculations to avoid LLM hallucination. Instead of giving the LLM the raw data and letting it guess, the agent extracts data using sql_query and performs all arithmetic (ratios, growth rates, threshold comparisons) directly in Python. The LLM is only used at the very end to generate a natural language summary based on the Python-determined verdicts. Every company analysis is wrapped in a try/except block to ensure API failures do not crash the entire run.
+My agent uses a Router-based Prompt Chaining design, heavily relying on SQL for deterministic calculations to avoid
+LLM hallucination. Instead of giving the LLM the raw data and letting it guess, the agent extracts data using
+sql_query and performs all arithmetic (ratios, growth rates, threshold comparisons) directly in Python. The LLM is
+only used at the very end to generate a natural language summary based on the Python-determined verdicts. Every
+company analysis is wrapped in a try/except block to ensure API failures do not crash the entire run.
 
 ### Results:
 
