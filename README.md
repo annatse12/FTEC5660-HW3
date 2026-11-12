@@ -211,13 +211,14 @@ names and wording, and scores your 3 points only.
       ▼
 [Return Results Dictionary]
 
-### Description:
+**Description:**
 My agent uses a Router-based Prompt Chaining design, heavily relying on SQL for deterministic calculations to avoid LLM hallucination. Instead of giving the LLM the raw data and letting it guess, the agent extracts data using sql_query and performs all arithmetic (ratios, growth rates, threshold comparisons) directly in Python. The LLM is only used at the very end to generate a natural language summary based on the Python-determined verdicts. Every company analysis is wrapped in a try/except block to ensure API failures do not crash the entire run.
 
-### Results
+### Results:
 
 Point Score: 58/60 (Balanced: 94.4%)
 Disagreements: The agent disagreed with the ground truth on Point 12 for two companies: fernhill_group and driftwood_systems. Both companies showed positive revenue growth and positive R&D growth, which triggered my PASS rule. However, the ground truth marks them as FAIL. This suggests the hidden rule for Point 12 likely involves a more complex threshold, such as comparing the company's R&D-to-revenue ratio directly against the industry median, or considering future Capex plans.
+
 Task 2: Reflection on AI-Sycophancy and AI-Psychosis
 
 During the development of this Fisher Agent, I experienced firsthand the dangers of AI-sycophancy and AI-psychosis. Initially, I tried to let the LLM directly read the SQL outputs and calculate the profit margins and growth rates in its context window. The AI confidently agreed with my flawed assumptions and hallucinated numbers that looked plausible but were completely mathematically wrong (a form of AI-psychosis).
