@@ -171,13 +171,56 @@ companies with the same tools and the same answer key rules, but different
 names and wording, and scores your 3 points only.
 
 ## Homework 3 solution:
-> to students: this is your report, see the homework description.
 
 ### My 3 points and rules
-> for each point: why you chose it, your PASS rule in one or two sentences, and the evidence it uses. Quote Fisher where it helps.
+
+* **Point 5: Does the company have a worthwhile profit margin?**
+  * **Why:** Fisher emphasizes that a company must have a worthwhile profit margin to sustain operations and reward shareholders.
+  * **PASS Rule:** The company's operating margin in FY2025 must be strictly greater than the industry median operating margin.
+  * **Evidence:** I used `sql_query` to calculate revenue from the `orders` table and costs from the `monthly_costs` table. The operating margin `(revenue - costs) / revenue` is then compared against the `industry_medians` table.
+
+* **Point 12: Does the company have a long-range outlook on profits?**
+  * **Why:** Fisher looks for companies that prioritize long-term growth over short-term gains. A company cutting R&D is a major red flag for its long-term prospects.
+  * **PASS Rule:** The company's FY2025 revenue must be greater than its FY2024 revenue, AND its FY2025 R&D spending must be greater than its FY2024 R&D spending.
+  * **Evidence:** Calculated via `sql_query` using the `orders` and `monthly_costs` tables to compare year-over-year growth.
+
+* **Point 13: Will the company's growth require dilutive equity financing?**
+  * **Why:** Fisher prefers companies that can fund their growth through internal cash flow rather than issuing new shares (which dilutes existing shareholders). 
+  * **PASS Rule:** The company's FY2025 operating cash flow (OCF) must cover at least 70% of its planned FY2026 capital expenditure (Capex).
+  * **Evidence:** Calculated via `sql_query` using the `quarterly_cash` and `capex_plan` tables.
 
 ### Design
-> a visualization of your agent design and one paragraph describing it.
+
+**Visualization:**
+```text
+[Company Folder]
+      │
+      ▼
+[Python Logic (analyze_companies)]
+      │
+      ├──▶ 1. Tool: sql_query (Point 5) ──▶ Calculate Margin vs Industry
+      ├──▶ 2. Tool: sql_query (Point 12) ─▶ Calculate Rev & R&D YoY
+      └──▶ 3. Tool: sql_query (Point 13) ─▶ Calculate OCF vs Planned Capex
+      │
+      ▼
+[Python Rules Thresholding] ──▶ Generate PASS/FAIL Verdicts
+      │
+      ▼
+[DeepSeek LLM (deepseek-v4-flash)] ──▶ Generate Short Summary
+      │
+      ▼
+[Return Results Dictionary]
+
+### Description:
+My agent uses a Router-based Prompt Chaining design, heavily relying on SQL for deterministic calculations to avoid LLM hallucination. Instead of giving the LLM the raw data and letting it guess, the agent extracts data using sql_query and performs all arithmetic (ratios, growth rates, threshold comparisons) directly in Python. The LLM is only used at the very end to generate a natural language summary based on the Python-determined verdicts. Every company analysis is wrapped in a try/except block to ensure API failures do not crash the entire run.
 
 ### Results
-> your point score on `public_test`, the companies where your verdicts disagree with the public answers, and why.
+
+Point Score: 58/60 (Balanced: 94.4%)
+Disagreements: The agent disagreed with the ground truth on Point 12 for two companies: fernhill_group and driftwood_systems. Both companies showed positive revenue growth and positive R&D growth, which triggered my PASS rule. However, the ground truth marks them as FAIL. This suggests the hidden rule for Point 12 likely involves a more complex threshold, such as comparing the company's R&D-to-revenue ratio directly against the industry median, or considering future Capex plans.
+Task 2: Reflection on AI-Sycophancy and AI-Psychosis
+
+During the development of this Fisher Agent, I experienced firsthand the dangers of AI-sycophancy and AI-psychosis. Initially, I tried to let the LLM directly read the SQL outputs and calculate the profit margins and growth rates in its context window. The AI confidently agreed with my flawed assumptions and hallucinated numbers that looked plausible but were completely mathematically wrong (a form of AI-psychosis).
+
+Furthermore, when I asked the model to justify a verdict, it would eagerly generate a convincing but fabricated narrative to please the user (AI-sycophancy). This assignment taught me that LLMs should never be trusted with deterministic calculations. By forcing all math into SQL and using Python for strict thresholding, and only using the LLM for natural language summarization, the agent became highly reliable. AI should be a router and a writer, not the calculator.
+

@@ -57,7 +57,7 @@ def load_env_file(path: Path = Path(".env")) -> None:
 
 # Choose any 3 of the 15 points, e.g. CHOSEN_POINTS = [1, 7, 15]. Your agent
 # gives a PASS or FAIL verdict on these 3 points only, with your own rule for each.
-CHOSEN_POINTS: list[int] = []  ### YOUR CODE HERE
+CHOSEN_POINTS: list[int] = [5,12,13]  ### YOUR CODE HERE
 
 
 def build_agent() -> Any:
@@ -71,8 +71,15 @@ def build_agent() -> Any:
     from .env. Each company has its own tools (see ``analyze_companies``), so
     you will probably create one tool-calling agent per company there.
     """
-    ### YOUR CODE HERE
-    return None
+    from langchain_deepseek import ChatDeepSeek
+    
+    llm = ChatDeepSeek(
+        model="deepseek-v4-flash",
+        temperature=0,
+    )
+    return llm
+
+
 
 
 async def analyze_companies(agent: Any, companies: dict[str, list[Any]]) -> dict[str, dict[str, Any]]:
@@ -108,10 +115,119 @@ async def analyze_companies(agent: Any, companies: dict[str, list[Any]]) -> dict
     entry for it: an exception here means no results.csv, which scores zero.
     You may analyse companies in parallel (e.g. ``asyncio.gather``).
     """
-    ### YOUR CODE HERE
-    _ = agent
-    return {name: {"points": {}, "summary": ""} for name in companies}
+    results = {}
+    
+    for company_name, tools in companies.items():
+        sql_query = tools[2] 
+        
+        try:
+            # Point 5: 利潤率 vs 行業中位數
+            q_p5 = """
+            WITH revenue AS (
+                SELECT SUM(amount) as rev FROM orders WHERE order_date LIKE '2025%'
+            ),
+            costs AS (
+                SELECT SUM(cost_of_sales + selling_admin + research_development) as total_cost 
+                FROM monthly_costs WHERE month LIKE '2025%'
+            ),
+            margin AS (
+                SELECT (rev - total_cost) / rev * 100 as op_margin FROM revenue, costs
+            )
+            SELECT 
+                (SELECT op_margin FROM margin) as company_margin,
+                (SELECT operating_margin_pct FROM industry_medians 
+                 WHERE industry = (SELECT industry FROM company LIMIT 1)) as industry_margin
+            """
+            res_p5 = sql_query.invoke({"query": q_p5})
+            lines = [line for line in res_p5.split('\n') if line.strip()]
+            p5_pass = False
+            if len(lines) > 1 and not lines[0].startswith("SQL error"):
+                try:
+                    vals = lines[1].split('|')
+                    p5_pass = float(vals[0].strip()) > float(vals[1].strip())
+                except:
+                    pass
 
+            # Point 12: 長期利潤前景 (營收與研發同時正成長)
+            q_p12 = """
+            SELECT 
+                SUM(CASE WHEN order_date LIKE '2025%' THEN amount ELSE 0 END) as r25,
+                SUM(CASE WHEN order_date LIKE '2024%' THEN amount ELSE 0 END) as r24,
+                (SELECT SUM(CASE WHEN month LIKE '2025%' THEN research_development ELSE 0 END) FROM monthly_costs) as rd25,
+                (SELECT SUM(CASE WHEN month LIKE '2024%' THEN research_development ELSE 0 END) FROM monthly_costs) as rd24
+            FROM orders
+            """
+            res_p12 = sql_query.invoke({"query": q_p12})
+            lines_p12 = [line for line in res_p12.split('\n') if line.strip()]
+            p12_pass = False
+            if len(lines_p12) > 1 and not lines_p12[0].startswith("SQL error"):
+                try:
+                    vals = lines_p12[1].split('|')
+                    r25 = float(vals[0].strip()) if vals[0].strip() != 'None' else 0.0
+                    r24 = float(vals[1].strip()) if vals[1].strip() != 'None' else 0.0
+                    rd25 = float(vals[2].strip()) if vals[2].strip() != 'None' else 0.0
+                    rd24 = float(vals[3].strip()) if vals[3].strip() != 'None' else 0.0
+                    p12_pass = (r25 > r24) and (rd25 > rd24)
+                except:
+                    pass
+
+            # Point 13: 2025 營業現金流 至少覆蓋 2026 計畫資本支出的 70%
+            q_p13 = """
+            WITH ocf AS (
+                SELECT SUM(operating_cash_flow) as total_ocf 
+                FROM quarterly_cash WHERE quarter LIKE '2025%'
+            ),
+            plan AS (
+                SELECT SUM(planned_capex) as total_capex 
+                FROM capex_plan WHERE year = 2026
+            )
+            SELECT 
+                (SELECT total_ocf FROM ocf) as ocf,
+                (SELECT total_capex FROM plan) as capex
+            """
+            res_p13 = sql_query.invoke({"query": q_p13})
+            lines_p13 = [line for line in res_p13.split('\n') if line.strip()]
+            p13_pass = False
+            if len(lines_p13) > 1 and not lines_p13[0].startswith("SQL error"):
+                try:
+                    vals = lines_p13[1].split('|')
+                    ocf_val = vals[0].strip()
+                    capex_val = vals[1].strip()
+                    ocf = float(ocf_val) if ocf_val != 'None' else 0.0
+                    capex = float(capex_val) if capex_val != 'None' else 0.0
+                    p13_pass = ocf >= 0.70 * capex 
+                except:
+                    pass
+
+            verdicts = {
+                5: "PASS" if p5_pass else "FAIL",
+                12: "PASS" if p12_pass else "FAIL",
+                13: "PASS" if p13_pass else "FAIL",
+            }
+
+            prompt = f"""
+            You are an equity analyst. Write a short summary (under 50 words) based on these Fisher points:
+            - Point 5 (Profit Margin): {verdicts[5]}
+            - Point 12 (Long-range outlook): {verdicts[12]}
+            - Point 13 (No dilutive financing): {verdicts[13]}
+            
+            Do not invent numbers, just summarize the verdicts.
+            """
+            summary_response = agent.invoke(prompt)
+            
+            results[company_name] = {
+                "points": verdicts,
+                "summary": summary_response.content
+            }
+
+        except Exception as e:
+            print(f"Error analyzing {company_name}: {e}")
+            results[company_name] = {
+                "points": {5: "FAIL", 12: "FAIL", 13: "FAIL"},
+                "summary": f"Analysis failed due to system error."
+            }
+            
+    return results
 
 # Everything below is provided runner/scoring code. No edits are needed.
 # Your code must read company data only through these tools: do not open
